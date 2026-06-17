@@ -1,0 +1,12 @@
+# Dependencies (none are committed; SDK is provided by the Copilot runtime)
+node_modules/
+
+# Logs and temp output
+*.log
+srv.out
+srv.err
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.vscode/

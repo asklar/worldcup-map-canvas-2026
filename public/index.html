@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>2026 FIFA World Cup — Match Map</title>
+
+    <!-- Leaflet from CDN. If the host CSP blocks this, swap to a locally-bundled copy. -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin=""
+    />
+    <style>
+      :root {
+        --result: #1f9d55;
+        --upcoming: #e8722a;
+        --bg: #0f1116;
+        --panel: #181b22;
+        --text: #e6e8ec;
+        --muted: #9aa0aa;
+        --border: #2a2f3a;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: flex;
+        flex-direction: column;
+        font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      header {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 10px 14px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+      }
+      header h1 { font-size: 15px; margin: 0; white-space: nowrap; }
+      header .updated { color: var(--muted); font-size: 12px; }
+      .spacer { flex: 1 1 auto; }
+      .controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+      .seg button, .btn {
+        background: #222733;
+        color: var(--text);
+        border: 1px solid var(--border);
+        padding: 5px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .seg button.active { background: #313a4d; border-color: #4a5670; font-weight: 600; }
+      .seg { display: inline-flex; gap: 4px; }
+      input[type="search"] {
+        background: #222733;
+        color: var(--text);
+        border: 1px solid var(--border);
+        padding: 5px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        width: 130px;
+      }
+      #map { flex: 1 1 auto; }
+      .legend {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .legend .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; border: 1px solid rgba(255,255,255,.5); }
+      .dot.result { background: var(--result); }
+      .dot.upcoming { background: var(--upcoming); }
+
+      .leaflet-popup-content-wrapper { background: var(--panel); color: var(--text); border-radius: 10px; }
+      .leaflet-popup-tip { background: var(--panel); }
+      .popup { min-width: 200px; }
+      .popup .teams { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 6px; }
+      .popup .team { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 78px; text-align: center; }
+      .popup .team img { width: 34px; height: 34px; object-fit: contain; }
+      .popup .team span { font-size: 12px; }
+      .popup .score { font-size: 20px; font-weight: 700; min-width: 54px; text-align: center; }
+      .popup .vs { color: var(--muted); font-weight: 600; }
+      .popup .meta { color: var(--muted); font-size: 12px; text-align: center; }
+      .popup .badge {
+        display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
+        padding: 1px 7px; border-radius: 999px; margin-bottom: 6px;
+      }
+      .popup .badge.result { background: rgba(31,157,85,.18); color: #6fe0a3; }
+      .popup .badge.upcoming { background: rgba(232,114,42,.18); color: #ffb27a; }
+      .popup a { color: #7aa2ff; }
+      #empty {
+        position: absolute; inset: auto 0 16px 0; text-align: center; color: var(--muted);
+        font-size: 13px; pointer-events: none; z-index: 500;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>🌎 2026 FIFA World Cup</h1>
+      <span class="legend">
+        <span><span class="dot result"></span>Result</span>
+        <span><span class="dot upcoming"></span>Upcoming</span>
+      </span>
+      <span class="spacer"></span>
+      <div class="controls">
+        <span class="seg" id="statusFilter">
+          <button data-status="all" class="active">All</button>
+          <button data-status="result">Results</button>
+          <button data-status="upcoming">Upcoming</button>
+        </span>
+        <input id="teamFilter" type="search" placeholder="Filter team…" />
+        <button class="btn" id="refresh">↻ Refresh</button>
+        <span class="updated" id="updated"></span>
+      </div>
+    </header>
+    <div id="map"></div>
+    <div id="empty" hidden></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script>
+      const STATUS_COLOR = { result: "#1f9d55", upcoming: "#e8722a" };
+
+      const map = L.map("map", { worldCopyJump: true }).setView([40, -98], 4);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 18,
+        attribution: "&copy; OpenStreetMap contributors",
+      }).addTo(map);
+
+      const markerLayer = L.layerGroup().addTo(map);
+      let allMatches = [];
+      let markerById = new Map();
+      let filter = { status: "all", team: "" };
+
+      function escapeHtml(s) {
+        return String(s ?? "").replace(/[&<>"']/g, (c) =>
+          ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]),
+        );
+      }
+
+      function kickoffLabel(m) {
+        if (m.date) {
+          const t = m.time ? m.time.slice(0, 5) : "";
+          return `${m.date}${t ? " · " + t : ""}`;
+        }
+        return "Time TBD";
+      }
+
+      function teamCol(name, badge) {
+        const img = badge
+          ? `<img src="${escapeHtml(badge)}" alt="" onerror="this.style.visibility='hidden'" />`
+          : `<div style="width:34px;height:34px"></div>`;
+        return `<div class="team">${img}<span>${escapeHtml(name)}</span></div>`;
+      }
+
+      function popupHtml(m) {
+        const center =
+          m.status === "result"
+            ? `<div class="score">${m.homeScore ?? "-"} <span class="vs">:</span> ${m.awayScore ?? "-"}</div>`
+            : `<div class="score vs">vs</div>`;
+        const roundTxt = m.round ? ` · Round ${m.round}` : "";
+        const when = m.status === "result" ? (m.date || "") : kickoffLabel(m);
+        const video =
+          m.status === "result" && m.video
+            ? `<div class="meta"><a href="${escapeHtml(m.video)}" target="_blank" rel="noopener">▶ Highlights</a></div>`
+            : "";
+        const approx = m.exactVenue ? "" : " (approx.)";
+        return `
+          <div class="popup">
+            <div style="text-align:center">
+              <span class="badge ${m.status}">${m.status === "result" ? "Full time" : "Upcoming"}</span>
+            </div>
+            <div class="teams">
+              ${teamCol(m.home, m.homeBadge)}
+              ${center}
+              ${teamCol(m.away, m.awayBadge)}
+            </div>
+            <div class="meta">${escapeHtml(m.venue)}${approx} · ${escapeHtml(m.city)}${roundTxt}</div>
+            <div class="meta">${escapeHtml(when)}</div>
+            ${video}
+          </div>`;
+      }
+
+      // Group matches by venue so several games at one stadium fan out instead of overlapping.
+      function offsetFor(index, total) {
+        if (total <= 1) return [0, 0];
+        const radius = 0.18; // degrees (~12-20km); enough to separate pins at WC zoom levels
+        const angle = (2 * Math.PI * index) / total;
+        return [radius * Math.sin(angle), radius * Math.cos(angle)];
+      }
+
+      function render() {
+        markerLayer.clearLayers();
+        markerById = new Map();
+
+        const term = filter.team.trim().toLowerCase();
+        const visible = allMatches.filter((m) => {
+          if (filter.status !== "all" && m.status !== filter.status) return false;
+          if (term && !(m.home.toLowerCase().includes(term) || m.away.toLowerCase().includes(term))) return false;
+          return true;
+        });
+
+        const byVenue = new Map();
+        for (const m of visible) {
+          const key = `${m.lat.toFixed(3)},${m.lng.toFixed(3)}`;
+          if (!byVenue.has(key)) byVenue.set(key, []);
+          byVenue.get(key).push(m);
+        }
+
+        for (const group of byVenue.values()) {
+          group.forEach((m, i) => {
+            const [dLat, dLng] = offsetFor(i, group.length);
+            const marker = L.circleMarker([m.lat + dLat, m.lng + dLng], {
+              radius: 8,
+              color: "#ffffff",
+              weight: 1.5,
+              fillColor: STATUS_COLOR[m.status],
+              fillOpacity: 0.92,
+            });
+            marker.bindPopup(popupHtml(m), { maxWidth: 280 });
+            marker.bindTooltip(
+              `${escapeHtml(m.home)} v ${escapeHtml(m.away)}`,
+              { direction: "top", offset: [0, -6] },
+            );
+            marker.addTo(markerLayer);
+            markerById.set(m.id, { marker, match: m });
+          });
+        }
+
+        const empty = document.getElementById("empty");
+        if (visible.length === 0) {
+          empty.hidden = false;
+          empty.textContent = allMatches.length
+            ? "No matches match the current filter."
+            : "No World Cup matches available yet.";
+        } else {
+          empty.hidden = true;
+        }
+      }
+
+      async function load() {
+        try {
+          const res = await fetch("/api/matches");
+          const data = await res.json();
+          allMatches = data.matches || [];
+          document.getElementById("updated").textContent = data.updatedAt
+            ? "Updated " + new Date(data.updatedAt).toLocaleTimeString()
+            : "";
+          render();
+        } catch (err) {
+          document.getElementById("updated").textContent = "Failed to load matches";
+        }
+      }
+
+      // Focus a match (or team) on the map: pan, zoom, open its popup.
+      function focusMatch({ id, team } = {}) {
+        let entry = id ? markerById.get(String(id)) : null;
+        if (!entry && team) {
+          const t = team.toLowerCase();
+          for (const e of markerById.values()) {
+            if (e.match.home.toLowerCase().includes(t) || e.match.away.toLowerCase().includes(t)) {
+              entry = e;
+              break;
+            }
+          }
+        }
+        if (entry) {
+          map.flyTo(entry.marker.getLatLng(), 7, { duration: 0.8 });
+          entry.marker.openPopup();
+        }
+      }
+
+      // --- UI controls ---
+      document.getElementById("statusFilter").addEventListener("click", (e) => {
+        const btn = e.target.closest("button");
+        if (!btn) return;
+        filter.status = btn.dataset.status;
+        for (const b of e.currentTarget.querySelectorAll("button")) b.classList.toggle("active", b === btn);
+        render();
+      });
+      document.getElementById("teamFilter").addEventListener("input", (e) => {
+        filter.team = e.target.value;
+        render();
+      });
+      document.getElementById("refresh").addEventListener("click", () => {
+        fetch("/api/refresh").catch(() => {});
+      });
+
+      // --- Server-Sent Events: agent-driven commands ---
+      function connectSse() {
+        const es = new EventSource("/events");
+        es.addEventListener("reload", () => load());
+        es.addEventListener("focus", (e) => {
+          try { focusMatch(JSON.parse(e.data)); } catch {}
+        });
+        es.addEventListener("filter", (e) => {
+          try {
+            const f = JSON.parse(e.data);
+            if (f.status) {
+              filter.status = f.status;
+              for (const b of document.querySelectorAll("#statusFilter button"))
+                b.classList.toggle("active", b.dataset.status === f.status);
+            }
+            if (typeof f.team === "string") {
+              filter.team = f.team;
+              document.getElementById("teamFilter").value = f.team;
+            }
+            render();
+          } catch {}
+        });
+        es.onerror = () => { /* EventSource auto-reconnects */ };
+      }
+
+      load();
+      connectSse();
+    </script>
+  </body>
+</html>
