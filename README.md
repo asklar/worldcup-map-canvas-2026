@@ -11,17 +11,6 @@ Match data comes live from [TheSportsDB](https://www.thesportsdb.com/); the map 
 
 ![Demo: 2026 World Cup matches on the canvas map](./assets/demo.gif)
 
-<!--
-  Want an inline VIDEO PLAYER instead of the GIF? GitHub only renders a player for videos
-  uploaded through its web UI (which mint a github.com/asklar/worldcup-map-canvas-2026/assets/... URL):
-    1. On github.com, click "Edit" on this README (or open a throwaway issue).
-    2. Drag `assets/demo.mp4` into the text box and wait for upload.
-    3. Copy the generated https://github.com/asklar/worldcup-map-canvas-2026/assets/... URL.
-    4. Paste that URL on its own line below this comment, then commit.
-  A committed mp4 linked by raw URL or a <video> tag will NOT play inline — only the
-  uploaded-attachment URL does.
--->
-
 > **Note:** Canvases render in the **GitHub Copilot desktop app** side panel — not in the
 > CLI terminal. You need the app to see the map.
 
