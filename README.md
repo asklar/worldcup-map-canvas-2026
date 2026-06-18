@@ -9,7 +9,7 @@ team, and the agent can drive the map for you.
 Match data comes live from [TheSportsDB](https://www.thesportsdb.com/); the map uses
 [Leaflet](https://leafletjs.com/) with [OpenStreetMap](https://www.openstreetmap.org/) tiles.
 
-![Demo: 2026 World Cup matches on the canvas map](./assets/worldcup-demo.gif)
+https://github.com/user-attachments/assets/d50dadb2-0919-4783-91bb-5f5a927385fb
 
 > **Note:** Canvases render in the **GitHub Copilot desktop app** side panel — not in the
 > CLI terminal. You need the app to see the map.
